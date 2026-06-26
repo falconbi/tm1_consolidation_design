@@ -11,15 +11,18 @@ A conceptual design reference for building a multi-entity, multi-currency financ
 1. [The Core Problem](#the-core-problem)
 2. [Ownership as a Graph](#ownership-as-a-graph)
 3. [Classification Thresholds](#classification-thresholds)
-4. [Why Consolidation of Consolidation is Hard](#why-consolidation-of-consolidation-is-hard)
-5. [The Path Encoding Solution](#the-path-encoding-solution)
-6. [Calculating Indirect Ownership from the Name](#calculating-indirect-ownership-from-the-name)
-7. [Rules vs TI: Why Live Calculation Wins](#rules-vs-ti-why-live-calculation-wins)
-8. [The Dimension Structure](#the-dimension-structure)
-9. [The Grouped Override](#the-grouped-override)
-10. [Summary: Why This Design Works](#summary-why-this-design-works)
-11. [Prototype Validation](#prototype-validation)
-12. [Worked Examples and Reference Material](#worked-examples-and-reference-material)
+4. [Direct Consolidation — The Foundation](#direct-consolidation--the-foundation)
+5. [Why Consolidation of Consolidation is Hard](#why-consolidation-of-consolidation-is-hard)
+6. [The Path Encoding Solution](#the-path-encoding-solution)
+7. [Calculating Indirect Ownership from the Name](#calculating-indirect-ownership-from-the-name)
+8. [Rules vs TI: Why Live Calculation Wins](#rules-vs-ti-why-live-calculation-wins)
+9. [The Dimension Structure](#the-dimension-structure)
+10. [The Grouped Override](#the-grouped-override)
+11. [One Model, All Cases](#one-model-all-cases)
+12. [UI Considerations](#ui-considerations)
+13. [Summary: Why This Design Works](#summary-why-this-design-works)
+14. [Prototype Validation](#prototype-validation)
+15. [Worked Examples and Reference Material](#worked-examples-and-reference-material)
 
 ---
 
@@ -77,6 +80,33 @@ Effective ownership determines how an entity is treated in the consolidated acco
 | > 0% and ≤ 20% | **Investment** | Fair value / cost |
 
 Classification is not static. If a group acquires additional shares and ownership crosses 50%, the entity automatically reclassifies from Associate to Subsidiary — and the consolidation treatment changes with it. The design must handle this dynamically, not as a manual reconfiguration.
+
+---
+
+## Direct Consolidation — The Foundation
+
+Before introducing indirect ownership and COC, it is worth establishing the simplest case — because the same dimension and the same model handles it, without any special configuration.
+
+**Direct consolidation** is where a parent entity owns a subsidiary directly and consolidates it line-by-line into the group accounts.
+
+```mermaid
+graph TD
+    PP["PP (Group)"] -->|75%| A1["A1 (Subsidiary)"]
+```
+
+In this structure:
+
+- `A1` exists in the **Base** hierarchy as the data-bearing entity
+- `PP_A1` exists in the **CC_PP** consolidation hierarchy as the path element — PP's view of A1
+- The ownership % (75%) is stored in the pairwise ownership cube for the pair PP → A1
+- The rules read that % and classify A1 as a Subsidiary (≥ 50%)
+- A1's trial balance data feeds into `PP_A1` and rolls up through `CC_PP` into the consolidated result
+
+**Minority interest** follows automatically. If PP owns 75% of A1, the remaining 25% belongs to minority shareholders. The model calculates minority interest in profit as A1's adjusted net profit × 25%, posting it as a separate line in the consolidated P&L and balance sheet.
+
+**Partial ownership below 50%** is handled identically — the same structure, the same path element, the same rules. The classification changes automatically (Associate at 35%, Investment at 15%), and the consolidation treatment changes with it. No model reconfiguration required.
+
+This is the foundation. Every more complex scenario — indirect chains, COC — is an extension of this same mechanism.
 
 ---
 
@@ -306,6 +336,77 @@ Four overrides are supported, each taking precedence over the calculated classif
 | **I — Investment** | Force investment treatment regardless of calculated % |
 
 Overrides are stored in a **time-aware cube** — they can be applied for a specific period and version without changing any other period. This is important for restating comparative periods when group structure decisions change retrospectively.
+
+---
+
+## One Model, All Cases
+
+A critical point that is easy to miss: **this is not multiple models or multiple processes for different entity types. It is one dimension, one set of rules, one consolidation run — handling all cases simultaneously.**
+
+In a single consolidation, the model may contain:
+
+| Entity | Ownership | Classification | Treatment |
+|--------|-----------|----------------|-----------|
+| A1 | 100% direct | Subsidiary | Full consolidation |
+| B1 | 56% indirect via A1 | Subsidiary | Full consolidation, minority interest |
+| B2 | 35% indirect | Associate | Equity method |
+| B3 | 15% direct | Investment | Fair value / cost |
+| A1 (at PP level) | Sub-group | Grouped | Base data reversed — arrives via A1 consolidated |
+
+All five treatments coexist in the same model. The classification rules fire for every entity on every calculation. The correct treatment is applied automatically based on the calculated ownership percentage and any override in place.
+
+Adding a new entity does not require a new process, a new cube, or a new rule set. Add the element, wire the ownership, and the model absorbs it.
+
+This is the practical payoff of the design. A consolidation team managing a group that changes over time — acquisitions, disposals, threshold crossings — does not need to reconfigure the model. They update ownership data. Everything else follows.
+
+---
+
+## UI Considerations
+
+The dimension structure and naming convention are elegant from a design perspective. From a finance user's perspective, opening a model and seeing elements named `PP_A1_B1_C1` with no context is disorienting. A good UI hides the mechanism and exposes the workflow.
+
+### What to Hide
+
+- **Path element names** — `PP_A1_B1` means nothing to a finance user. Show entity descriptions (aliases) everywhere. The key is internal plumbing.
+- **The dimension structure** — Base, IC_CG, CC_, CG_ prefixes are developer concepts. A finance user should never see them.
+- **The rules engine** — classification, ownership chain traversal, and reversal logic should be invisible. The user sees the result, not the mechanism.
+- **Account codes** — where possible, show account descriptions. Codes are for mapping, not for human navigation.
+
+### What to Expose
+
+- **A visual ownership tree** — the single most important UI element. Show the group structure as a tree with ownership % on each edge and classification badges on each node. A finance user should be able to see their entire group structure at a glance and spot errors immediately.
+
+```text
+PP (Group)
+├── A1 — 80% [Subsidiary]
+│   ├── B1 — 75% [Subsidiary, MI: 5%]
+│   └── B2 — 70% [Subsidiary, MI: 16%]
+└── A2 — 35% [Associate]
+```
+
+- **Calculated indirect % alongside entered direct %** — make it clear what the model is computing. If a user enters 80% for PP→A1 and 75% for A1→B1, show them that PP's effective ownership of B1 is 60%.
+- **Classification status clearly labelled** — Subsidiary / Associate / Investment / Grouped as a visible badge on each entity, with an indicator if it is overridden.
+- **Threshold proximity warning** — if ownership is approaching 50% or 20%, flag it. A stake at 48% is one transaction away from reclassification.
+- **Consolidation step sequence** — show the consolidation process as an ordered workflow. Data load → Adjustments → Intragroup → Investment elimination → Translation → Minority interest. Each step has a status. Users know where they are and what is outstanding.
+- **Approval status per entity** — which entities have approved data, which are pending. Visible at the group level, drillable to entity level.
+
+### The Guiding Principle
+
+The UI should present the **accounting workflow**, not the technical model. A finance user thinks:
+
+> *"I own 75% of B1 via A1. B1 has intercompany sales to B2 that need eliminating. B1 reports in USD, I consolidate in GBP."*
+
+They should never need to think:
+
+> *"I need to add element PP_A1_B1, wire it into CG_A1, set the ownership % in the pairwise cube, and check the length-8 rule block fires correctly."*
+
+That translation — from accounting intent to model mechanics — is the UI's job entirely.
+
+### TM1-Specific Reality
+
+PAW websheets are table-based. They are effective for data entry but limited for visual hierarchy representation. A tree diagram of the group structure requires either a custom HTML/JavaScript object within PAW, or a separate lightweight web application sitting alongside TM1 that reads the ownership data and renders it visually.
+
+The data is all there — ownership %, classifications, entity names are all in the model. The UI layer is a presentation problem, not a data problem.
 
 ---
 
