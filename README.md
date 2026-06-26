@@ -65,7 +65,7 @@ graph TD
 | B2 | PP → A1 → B2 | 80% × 70% | 56% |
 | B3 | PP → A2 → B3 | 60% × 65% | 39% |
 
-This is edge-weight multiplication on a directed graph — the same mathematics used in supply chain cost propagation, reinsurance exposure chains, and fund-of-funds ownership analysis. The consolidation problem is a well-known graph problem in disguise.
+Effective ownership is edge-weight multiplication along the path from group to entity.
 
 ---
 
