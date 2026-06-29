@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Financial Consolidation Hierarchy Design in TM1</title>
+<meta name="description" content="A conceptual design reference for building a multi-entity, multi-currency financial consolidation hierarchy in IBM Planning Analytics (TM1) — ownership graph model, path encoding, and the dimension architecture that makes Consolidation of Consolidation tractable in a rules engine.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1b2126;
+    --ink-soft:#4c5862;
+    --ink-faint:#7a868f;
+    --paper:#fbfaf7;
+    --panel:#ffffff;
+    --rule:#e4e7ea;
+    --rule-soft:#eef0f2;
+
+    --steel:#2f5d8a;        /* structure, hierarchy, base */
+    --steel-light:#e9f1f8;
+    --green:#2c7a52;        /* valid flow, base data, counted-once */
+    --green-light:#e7f4ec;
+    --amber:#b0750f;        /* contra, grouped, reversal */
+    --amber-light:#fbf2dd;
+    --red:#b23a32;          /* double-count, warnings */
+    --red-light:#fbe9e6;
+    --indigo:#4a3f9c;       /* implementation, UI */
+    --indigo-light:#ecebf8;
+
+    --maxw:860px;
+  }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'IBM Plex Sans',system-ui,sans-serif;
+    font-size:17px;
+    line-height:1.62;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px}
+
+  /* ---------- Masthead ---------- */
+  .masthead{
+    border-bottom:1px solid var(--rule);
+    background:
+      linear-gradient(180deg,#ffffff 0%, var(--paper) 100%);
+  }
+  .masthead .wrap{padding-top:78px;padding-bottom:52px}
+  .eyebrow{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12.5px;
+    letter-spacing:.18em;
+    text-transform:uppercase;
+    color:var(--steel);
+    font-weight:500;
+    margin:0 0 22px;
+    display:flex;align-items:center;gap:12px;
+  }
+  .eyebrow::after{content:"";flex:1;height:1px;background:var(--rule)}
+  h1.title{
+    font-family:'IBM Plex Serif',Georgia,serif;
+    font-weight:600;
+    font-size:clamp(2.1rem,5.4vw,3.3rem);
+    line-height:1.08;
+    letter-spacing:-.012em;
+    margin:0 0 22px;
+    color:var(--ink);
+  }
+  h1.title .accent{color:var(--steel)}
+  .standfirst{
+    font-size:1.18rem;
+    line-height:1.55;
+    color:var(--ink-soft);
+    max-width:64ch;
+    margin:0 0 30px;
+  }
+  .meta-row{
+    display:flex;flex-wrap:wrap;gap:10px 26px;
+    font-size:13.5px;color:var(--ink-faint);
+    font-family:'IBM Plex Mono',monospace;
+    padding-top:8px;border-top:1px solid var(--rule-soft);
+  }
+  .meta-row b{color:var(--ink-soft);font-weight:500}
+
+  .prototype{
+    margin:34px 0 0;
+    background:var(--green-light);
+    border:1px solid #cfe6d8;
+    border-left:4px solid var(--green);
+    border-radius:6px;
+    padding:16px 20px;
+    font-size:15.5px;
+    color:#21422f;
+  }
+  .prototype b{color:var(--green);font-weight:600}
+
+  /* ---------- TOC ---------- */
+  nav.toc{border-bottom:1px solid var(--rule);background:var(--panel)}
+  nav.toc .wrap{padding-top:34px;padding-bottom:34px}
+  nav.toc h2{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-faint);font-weight:500;margin:0 0 18px;
+  }
+  nav.toc ol{
+    list-style:none;margin:0;padding:0;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));
+    gap:2px 28px;
+    counter-reset:toc;
+  }
+  nav.toc li{counter-increment:toc}
+  nav.toc a{
+    display:flex;gap:12px;align-items:baseline;
+    text-decoration:none;color:var(--ink-soft);
+    padding:7px 4px;border-radius:4px;
+    border-bottom:1px solid transparent;
+    transition:color .15s,background .15s;
+  }
+  nav.toc a::before{
+    content:counter(toc,decimal-leading-zero);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;color:var(--steel);
+    flex:none;width:2ch;
+  }
+  nav.toc a:hover{color:var(--steel);background:var(--steel-light)}
+
+  /* ---------- Sections ---------- */
+  main .wrap{padding-top:8px;padding-bottom:8px}
+  section{padding:44px 0;border-bottom:1px solid var(--rule-soft)}
+  section:last-of-type{border-bottom:none}
+  .sec-head{display:flex;gap:18px;align-items:baseline;margin:0 0 18px}
+  .sec-num{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:14px;font-weight:600;color:var(--steel);
+    flex:none;padding-top:5px;
+  }
+  h2.sec-title{
+    font-family:'IBM Plex Serif',Georgia,serif;
+    font-weight:600;font-size:clamp(1.5rem,3.4vw,2rem);
+    line-height:1.15;letter-spacing:-.01em;margin:0;color:var(--ink);
+  }
+  h3{
+    font-family:'IBM Plex Sans',sans-serif;
+    font-weight:600;font-size:1.16rem;
+    margin:34px 0 12px;color:var(--ink);
+    letter-spacing:-.005em;
+  }
+  p{margin:0 0 16px}
+  section > p, section > ul, section > ol, section > .fig, section > .tablewrap,
+  section > pre, section > blockquote, section > .callout{margin-left:0}
+  strong{font-weight:600;color:var(--ink)}
+  code{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:.88em;
+    background:#f1f0ec;
+    padding:.1em .38em;border-radius:4px;
+    color:#3a4750;
+  }
+  a{color:var(--steel)}
+
+  ul,ol{margin:0 0 16px;padding-left:1.3em}
+  li{margin:6px 0}
+  li::marker{color:var(--steel)}
+
+  blockquote{
+    margin:18px 0;padding:4px 0 4px 22px;
+    border-left:3px solid var(--rule);
+    color:var(--ink-soft);font-style:italic;
+    font-family:'IBM Plex Serif',serif;font-size:1.08rem;
+  }
+
+  /* ---------- Tables ---------- */
+  .tablewrap{overflow-x:auto;margin:22px 0}
+  table{border-collapse:collapse;width:100%;font-size:15px}
+  th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--rule);vertical-align:top}
+  thead th{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink-faint);font-weight:600;
+    border-bottom:1.5px solid var(--ink-soft);
+  }
+  tbody tr:hover{background:#f6f7f8}
+  td code{background:#eef0f2}
+  .pill{
+    display:inline-block;font-family:'IBM Plex Mono',monospace;
+    font-size:11.5px;font-weight:600;padding:2px 9px;border-radius:20px;
+    letter-spacing:.02em;
+  }
+  .pill.sub{background:var(--steel-light);color:var(--steel)}
+  .pill.assoc{background:var(--indigo-light);color:var(--indigo)}
+  .pill.inv{background:#eef1f3;color:var(--ink-soft)}
+  .pill.grp{background:var(--amber-light);color:var(--amber)}
+
+  /* ---------- Code / ASCII ---------- */
+  pre{
+    background:#1c2530;color:#d7e0e8;
+    font-family:'IBM Plex Mono',monospace;font-size:13.5px;line-height:1.6;
+    padding:18px 20px;border-radius:8px;overflow-x:auto;margin:20px 0;
+    border:1px solid #283442;
+  }
+  pre .c{color:#7f8fa0}      /* comment / faint */
+  pre .k{color:#7fb3e0}      /* steel key */
+  pre .g{color:#7fd0a0}      /* green */
+  pre .a{color:#e3b766}      /* amber */
+  pre .r{color:#e89b94}      /* red */
+  pre.ascii{font-size:13px;line-height:1.5}
+
+  /* ---------- Figures ---------- */
+  .fig{margin:26px 0;text-align:center}
+  .fig svg{max-width:100%;height:auto}
+  figcaption{
+    font-size:13px;color:var(--ink-faint);
+    font-family:'IBM Plex Mono',monospace;letter-spacing:.02em;
+    margin-top:12px;text-align:center;
+  }
+  figcaption b{color:var(--ink-soft);font-weight:600}
+
+  /* SVG element styling */
+  .svg-label{font-family:'IBM Plex Sans',sans-serif;font-size:14px;fill:var(--ink)}
+  .svg-sub{font-family:'IBM Plex Mono',monospace;font-size:11px;fill:var(--ink-faint)}
+  .svg-edge{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600}
+  .node-steel{fill:var(--steel-light);stroke:var(--steel);stroke-width:1.5}
+  .node-green{fill:var(--green-light);stroke:var(--green);stroke-width:1.5}
+  .node-amber{fill:var(--amber-light);stroke:var(--amber);stroke-width:1.5}
+  .node-red{fill:var(--red-light);stroke:var(--red);stroke-width:1.5}
+  .node-indigo{fill:var(--indigo-light);stroke:var(--indigo);stroke-width:1.5}
+  .node-plain{fill:#fff;stroke:var(--ink-soft);stroke-width:1.3}
+  .edge{stroke:var(--ink-soft);stroke-width:1.5;fill:none}
+  .edge-green{stroke:var(--green);stroke-width:1.8;fill:none}
+  .edge-red{stroke:var(--red);stroke-width:1.8;fill:none}
+  .edge-amber{stroke:var(--amber);stroke-width:1.8;fill:none}
+  .edge-dash{stroke:var(--ink-faint);stroke-width:1.4;fill:none;stroke-dasharray:5 4}
+
+  /* ---------- Callouts ---------- */
+  .callout{
+    border-radius:6px;padding:16px 20px;margin:22px 0;font-size:15.5px;
+    border:1px solid var(--rule);border-left:4px solid var(--ink-soft);
+    background:var(--panel);
+  }
+  .callout.warn{background:var(--red-light);border-color:#eccac6;border-left-color:var(--red)}
+  .callout.warn b{color:var(--red)}
+  .callout.note{background:var(--steel-light);border-color:#cfe0ee;border-left-color:var(--steel)}
+  .callout.note b{color:var(--steel)}
+  .callout.key{background:var(--amber-light);border-color:#e8d6a8;border-left-color:var(--amber)}
+  .callout.key b{color:var(--amber)}
+  .callout p{margin:0}
+  .callout p + p{margin-top:10px}
+
+  /* ---------- Signature: path encoding ---------- */
+  .signature{
+    margin:30px 0;padding:30px 26px;border-radius:10px;
+    background:linear-gradient(160deg,#1c2530 0%,#243140 100%);
+    border:1px solid #2b3a4a;color:#dbe4ec;
+  }
+  .signature .sig-label{
+    font-family:'IBM Plex Mono',monospace;font-size:11.5px;
+    letter-spacing:.16em;text-transform:uppercase;color:#8aa0b4;margin:0 0 18px;
+  }
+
+  /* ---------- Footer ---------- */
+  footer{background:#1c2530;color:#aebccb;border-top:3px solid var(--steel)}
+  footer .wrap{padding-top:48px;padding-bottom:54px}
+  footer h2{
+    font-family:'IBM Plex Serif',serif;color:#f0f4f8;font-weight:600;
+    font-size:1.3rem;margin:0 0 14px;
+  }
+  footer p{color:#aebccb;font-size:15px;max-width:62ch}
+  footer a{color:#9ec3e6}
+  .lic{
+    margin-top:22px;padding-top:20px;border-top:1px solid #2c3a48;
+    font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#8294a4;
+    display:flex;flex-wrap:wrap;gap:8px 22px;
+  }
+  .refs{font-size:15px;color:#c4d0db}
+  .refs cite{font-style:italic;color:#e6edf3}
+
+  @media (max-width:620px){
+    body{font-size:16px}
+    .sec-head{gap:12px}
+    nav.toc ol{grid-template-columns:1fr}
+    .masthead .wrap{padding-top:54px;padding-bottom:40px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ MASTHEAD ============ -->
+<header class="masthead">
+  <div class="wrap">
+    <p class="eyebrow">Conceptual Design Reference &nbsp;·&nbsp; IBM Planning Analytics</p>
+    <h1 class="title">Financial Consolidation<br>Hierarchy Design in <span class="accent">TM1</span></h1>
+    <p class="standfirst">Building a multi-entity, multi-currency consolidation hierarchy in a rules-based engine — the ownership graph model, the path-encoding mechanism, and the dimension architecture that makes Consolidation of Consolidation tractable.</p>
+    <div class="meta-row">
+      <span><b>Platform</b> IBM Planning Analytics / TM1</span>
+      <span><b>Scope</b> Indirect ownership · COC · Multi-currency</span>
+      <span><b>Status</b> Validated prototype</span>
+    </div>
+    <div class="prototype">
+      <b>Prototype status.</b> An advanced prototype has been built and tested against this design, validating the hierarchy mechanism, COC classification, indirect ownership calculation, and consolidation sequencing across multiple real-world scenarios.
+    </div>
+  </div>
+</header>
+
+<!-- ============ TOC ============ -->
+<nav class="toc">
+  <div class="wrap">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#s1">The Core Problem</a></li>
+      <li><a href="#s2">Ownership as a Graph</a></li>
+      <li><a href="#s3">Classification Thresholds</a></li>
+      <li><a href="#s4">Direct Consolidation — The Foundation</a></li>
+      <li><a href="#s5">Why COC is Hard</a></li>
+      <li><a href="#s6">The Path Encoding Solution</a></li>
+      <li><a href="#s7">Indirect Ownership from the Name</a></li>
+      <li><a href="#s8">Rules vs TI: Why Live Wins</a></li>
+      <li><a href="#s9">The Dimension Structure</a></li>
+      <li><a href="#s10">The Grouped Override</a></li>
+      <li><a href="#s11">One Model, All Cases</a></li>
+      <li><a href="#s12">UI Considerations</a></li>
+      <li><a href="#s13">Why This Design Works</a></li>
+      <li><a href="#s14">Prototype Validation</a></li>
+      <li><a href="#s15">References &amp; Reference Material</a></li>
+    </ol>
+  </div>
+</nav>
+
+<main>
+<div class="wrap">
+
+<!-- 1 -->
+<section id="s1">
+  <div class="sec-head"><span class="sec-num">01</span><h2 class="sec-title">The Core Problem</h2></div>
+  <p>A consolidated set of accounts must combine the financial results of a group of entities into a single picture — eliminating intragroup transactions, translating currencies, and presenting the group as if it were one company.</p>
+  <p>The easy case is a flat structure: one parent, several wholly-owned subsidiaries. Every tool handles this.</p>
+  <p>The hard case is when:</p>
+  <ul>
+    <li>Ownership is <strong>indirect</strong> — Parent owns an Intermediate which owns a Subsidiary</li>
+    <li>Ownership is <strong>partial</strong> — the group owns less than 100%, creating minority interest</li>
+    <li>The <strong>same entity belongs to multiple consolidation groups</strong> simultaneously — Consolidation of Consolidation</li>
+  </ul>
+  <p>The first two are well understood and handled by most consolidation tools. The third is where designs fail or become unmaintainable. This document focuses on all three, with particular attention to COC.</p>
+</section>
+
+<!-- 2 -->
+<section id="s2">
+  <div class="sec-head"><span class="sec-num">02</span><h2 class="sec-title">Ownership as a Graph</h2></div>
+  <p>Corporate ownership is a <strong>directed acyclic graph</strong>. Entities are nodes. Ownership relationships are directed edges with a weight — the ownership percentage.</p>
+
+  <figure class="fig">
+    <svg viewBox="0 0 720 350" role="img" aria-label="Ownership graph: PP owns A1 at 80% and A2 at 60%; A1 owns B1 at 75% and B2 at 70%; A2 owns B3 at 65%.">
+      <defs>
+        <marker id="arrow" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#4c5862"/>
+        </marker>
+      </defs>
+      <!-- edges -->
+      <path class="edge" marker-end="url(#arrow)" d="M345,72 L235,128"/>
+      <path class="edge" marker-end="url(#arrow)" d="M395,72 L505,128"/>
+      <path class="edge" marker-end="url(#arrow)" d="M200,182 L135,250"/>
+      <path class="edge" marker-end="url(#arrow)" d="M235,182 L300,250"/>
+      <path class="edge" marker-end="url(#arrow)" d="M520,182 L520,250"/>
+      <!-- edge labels -->
+      <text class="svg-edge" x="270" y="100" fill="#2f5d8a">80%</text>
+      <text class="svg-edge" x="455" y="100" fill="#2f5d8a">60%</text>
+      <text class="svg-edge" x="150" y="222" fill="#2f5d8a">75%</text>
+      <text class="svg-edge" x="285" y="222" fill="#2f5d8a">70%</text>
+      <text class="svg-edge" x="530" y="222" fill="#2f5d8a">65%</text>
+      <!-- nodes -->
+      <g>
+        <rect class="node-steel" x="330" y="36" width="80" height="40" rx="7"/>
+        <text class="svg-label" x="370" y="55" text-anchor="middle" font-weight="600">PP</text>
+        <text class="svg-sub" x="370" y="68" text-anchor="middle">Group</text>
+      </g>
+      <g>
+        <rect class="node-steel" x="180" y="146" width="80" height="40" rx="7"/>
+        <text class="svg-label" x="220" y="170" text-anchor="middle" font-weight="600">A1</text>
+      </g>
+      <g>
+        <rect class="node-steel" x="480" y="146" width="80" height="40" rx="7"/>
+        <text class="svg-label" x="520" y="170" text-anchor="middle" font-weight="600">A2</text>
+      </g>
+      <g>
+        <rect class="node-plain" x="95" y="254" width="80" height="40" rx="7"/>
+        <text class="svg-label" x="135" y="278" text-anchor="middle" font-weight="600">B1</text>
+      </g>
+      <g>
+        <rect class="node-plain" x="260" y="254" width="80" height="40" rx="7"/>
+        <text class="svg-label" x="300" y="278" text-anchor="middle" font-weight="600">B2</text>
+      </g>
+      <g>
+        <rect class="node-plain" x="480" y="254" width="80" height="40" rx="7"/>
+        <text class="svg-label" x="520" y="278" text-anchor="middle" font-weight="600">B3</text>
+      </g>
+    </svg>
+    <figcaption><b>Fig 1.</b> Ownership as a weighted directed graph</figcaption>
+  </figure>
+
+  <p><strong>Effective indirect ownership</strong> is the product of edge weights along the path from the group to the entity:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Entity</th><th>Path</th><th>Calculation</th><th>Effective Ownership</th></tr></thead>
+      <tbody>
+        <tr><td>A1</td><td>PP → A1</td><td>80%</td><td><strong>80%</strong></td></tr>
+        <tr><td>A2</td><td>PP → A2</td><td>60%</td><td><strong>60%</strong></td></tr>
+        <tr><td>B1</td><td>PP → A1 → B1</td><td>80% × 75%</td><td><strong>60%</strong></td></tr>
+        <tr><td>B2</td><td>PP → A1 → B2</td><td>80% × 70%</td><td><strong>56%</strong></td></tr>
+        <tr><td>B3</td><td>PP → A2 → B3</td><td>60% × 65%</td><td><strong>39%</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Effective ownership is edge-weight multiplication along the path from group to entity.</p>
+</section>
+
+<!-- 3 -->
+<section id="s3">
+  <div class="sec-head"><span class="sec-num">03</span><h2 class="sec-title">Classification Thresholds</h2></div>
+  <p>Effective ownership determines how an entity is treated in the consolidated accounts. These thresholds follow IFRS 10 / IAS 28 and reflect the degree of control or significant influence the parent exercises:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Effective Ownership</th><th>Classification</th><th>Consolidation Treatment</th></tr></thead>
+      <tbody>
+        <tr><td>≥ 50%</td><td><span class="pill sub">Subsidiary</span></td><td>Full line-by-line consolidation</td></tr>
+        <tr><td>&gt; 20% and &lt; 50%</td><td><span class="pill assoc">Associate</span></td><td>Equity method only</td></tr>
+        <tr><td>&gt; 0% and ≤ 20%</td><td><span class="pill inv">Investment</span></td><td>Fair value / cost</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Classification is not static. If a group acquires additional shares and ownership crosses 50%, the entity automatically reclassifies from Associate to Subsidiary — and the consolidation treatment changes with it. The design must handle this dynamically, not as a manual reconfiguration.</p>
+</section>
+
+<!-- 4 -->
+<section id="s4">
+  <div class="sec-head"><span class="sec-num">04</span><h2 class="sec-title">Direct Consolidation — The Foundation</h2></div>
+  <p>Before introducing indirect ownership and COC, it is worth establishing the simplest case — because the same dimension and the same model handles it, without any special configuration.</p>
+  <p><strong>Direct consolidation</strong> is where a parent entity owns a subsidiary directly and consolidates it line-by-line into the group accounts.</p>
+
+  <figure class="fig">
+    <svg viewBox="0 0 420 200" role="img" aria-label="PP owns A1 directly at 75 percent.">
+      <defs>
+        <marker id="arrow2" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#4c5862"/>
+        </marker>
+      </defs>
+      <path class="edge" marker-end="url(#arrow2)" d="M210,76 L210,120"/>
+      <text class="svg-edge" x="222" y="102" fill="#2f5d8a">75%</text>
+      <g>
+        <rect class="node-steel" x="160" y="36" width="100" height="42" rx="7"/>
+        <text class="svg-label" x="210" y="55" text-anchor="middle" font-weight="600">PP</text>
+        <text class="svg-sub" x="210" y="69" text-anchor="middle">Group</text>
+      </g>
+      <g>
+        <rect class="node-green" x="150" y="122" width="120" height="42" rx="7"/>
+        <text class="svg-label" x="210" y="141" text-anchor="middle" font-weight="600">A1</text>
+        <text class="svg-sub" x="210" y="155" text-anchor="middle">Subsidiary</text>
+      </g>
+    </svg>
+    <figcaption><b>Fig 2.</b> The base case — direct line-by-line consolidation</figcaption>
+  </figure>
+
+  <p>In this structure:</p>
+  <ul>
+    <li><code>A1</code> exists in the <strong>Base</strong> hierarchy as the data-bearing entity</li>
+    <li><code>PP_A1</code> exists in the <strong>CC_PP</strong> consolidation hierarchy as the path element — PP's view of A1</li>
+    <li>The ownership % (75%) is stored in the pairwise ownership cube for the pair PP → A1</li>
+    <li>The rules read that % and classify A1 as a Subsidiary (≥ 50%)</li>
+    <li>A1's trial balance data feeds into <code>PP_A1</code> and rolls up through <code>CC_PP</code> into the consolidated result</li>
+  </ul>
+  <p><strong>Minority interest</strong> follows automatically. If PP owns 75% of A1, the remaining 25% belongs to minority shareholders. The model calculates minority interest in profit as A1's adjusted net profit × 25%, posting it as a separate line in the consolidated P&amp;L and balance sheet.</p>
+  <p><strong>Partial ownership below 50%</strong> is handled identically — the same structure, the same path element, the same rules. The classification changes automatically (Associate at 35%, Investment at 15%), and the consolidation treatment changes with it. No model reconfiguration required.</p>
+  <p>This is the foundation. Every more complex scenario — indirect chains, COC — is an extension of this same mechanism.</p>
+</section>
+
+<!-- 5 -->
+<section id="s5">
+  <div class="sec-head"><span class="sec-num">05</span><h2 class="sec-title">Why Consolidation of Consolidation is Hard</h2></div>
+  <p>COC arises when a subsidiary is itself a consolidating group — it produces its own consolidated accounts, which then roll up into the parent group.</p>
+
+  <figure class="fig">
+    <svg viewBox="0 0 720 360" role="img" aria-label="PP owns A1 (a sub-group containing B1 and B2) and directly owns B3.">
+      <defs>
+        <marker id="arrow3" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#4c5862"/>
+        </marker>
+      </defs>
+      <!-- subgroup box -->
+      <rect x="60" y="222" width="330" height="110" rx="10" fill="none" stroke="var(--steel)" stroke-width="1.3" stroke-dasharray="6 4"/>
+      <text class="svg-sub" x="75" y="244" fill="#2f5d8a" font-weight="600">A1 Consolidated Group</text>
+      <!-- edges -->
+      <path class="edge" marker-end="url(#arrow3)" d="M340,76 L235,154"/>
+      <path class="edge" marker-end="url(#arrow3)" d="M400,76 L560,250"/>
+      <path class="edge" marker-end="url(#arrow3)" d="M200,200 L160,262"/>
+      <path class="edge" marker-end="url(#arrow3)" d="M245,200 L300,262"/>
+      <text class="svg-edge" x="268" y="116" fill="#2f5d8a">80%</text>
+      <text class="svg-edge" x="495" y="150" fill="#2f5d8a">60%</text>
+      <text class="svg-edge" x="150" y="236" fill="#2f5d8a">75%</text>
+      <text class="svg-edge" x="285" y="236" fill="#2f5d8a">70%</text>
+      <!-- nodes -->
+      <g><rect class="node-steel" x="330" y="36" width="100" height="42" rx="7"/>
+        <text class="svg-label" x="380" y="55" text-anchor="middle" font-weight="600">PP</text>
+        <text class="svg-sub" x="380" y="69" text-anchor="middle">Ultimate Parent</text></g>
+      <g><rect class="node-amber" x="160" y="160" width="120" height="42" rx="7"/>
+        <text class="svg-label" x="220" y="179" text-anchor="middle" font-weight="600">A1</text>
+        <text class="svg-sub" x="220" y="193" text-anchor="middle">Sub-Group</text></g>
+      <g><rect class="node-plain" x="110" y="264" width="100" height="40" rx="7"/>
+        <text class="svg-label" x="160" y="288" text-anchor="middle" font-weight="600">B1</text></g>
+      <g><rect class="node-plain" x="250" y="264" width="100" height="40" rx="7"/>
+        <text class="svg-label" x="300" y="288" text-anchor="middle" font-weight="600">B2</text></g>
+      <g><rect class="node-plain" x="510" y="252" width="100" height="40" rx="7"/>
+        <text class="svg-label" x="560" y="276" text-anchor="middle" font-weight="600">B3</text></g>
+    </svg>
+    <figcaption><b>Fig 3.</b> A1 is both a subsidiary of PP and a consolidating parent of B1, B2</figcaption>
+  </figure>
+
+  <p>A1 plays two roles simultaneously:</p>
+  <ol>
+    <li>A <strong>subsidiary of PP</strong> — its consolidated result rolls into PP's group accounts</li>
+    <li>A <strong>consolidating parent</strong> — it produces its own group accounts containing B1 and B2</li>
+  </ol>
+
+  <h3>The Double-Count Problem</h3>
+  <p>Without explicit handling, a naive system would:</p>
+  <ol>
+    <li>Consolidate B1 and B2 into A1's group accounts ✓</li>
+    <li>Roll A1's consolidated result (already containing B1 and B2) into PP ✓</li>
+    <li><strong>Also consolidate B1 and B2 directly into PP's group</strong> ✗</li>
+  </ol>
+  <p>B1 and B2 are counted twice. Revenue, assets, and liabilities are overstated. The accounts are wrong — and wrong in a way that passes basic balance checks, making it easy to miss.</p>
+
+  <figure class="fig">
+    <svg viewBox="0 0 720 250" role="img" aria-label="PP Consolidated correctly rolls up A1 Consolidated which already contains B1 and B2, but also wrongly counts B1 and B2 a second time directly.">
+      <defs>
+        <marker id="arrow4" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#4c5862"/>
+        </marker>
+        <marker id="arrow4r" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#b23a32"/>
+        </marker>
+        <marker id="arrow4g" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#2c7a52"/>
+        </marker>
+      </defs>
+      <path class="edge-green" marker-end="url(#arrow4g)" d="M360,80 L210,128" style="stroke:var(--green)"/>
+      <path class="edge-red" marker-end="url(#arrow4r)" d="M375,80 L430,128"/>
+      <path class="edge-red" marker-end="url(#arrow4r)" d="M400,80 L600,128"/>
+      <g><rect class="node-steel" x="300" y="40" width="150" height="42" rx="7"/>
+        <text class="svg-label" x="375" y="65" text-anchor="middle" font-weight="600">PP Consolidated</text></g>
+      <g><rect class="node-green" x="120" y="130" width="180" height="56" rx="7"/>
+        <text class="svg-label" x="210" y="153" text-anchor="middle" font-weight="600">A1 Consolidated</text>
+        <text class="svg-sub" x="210" y="170" text-anchor="middle">contains B1 + B2 ✓</text></g>
+      <g><rect class="node-red" x="345" y="130" width="170" height="56" rx="7"/>
+        <text class="svg-label" x="430" y="153" text-anchor="middle" font-weight="600">B1 — direct</text>
+        <text class="svg-sub" x="430" y="170" text-anchor="middle" fill="#b23a32">counted again ✗</text></g>
+      <g><rect class="node-red" x="540" y="130" width="170" height="56" rx="7"/>
+        <text class="svg-label" x="625" y="153" text-anchor="middle" font-weight="600">B2 — direct</text>
+        <text class="svg-sub" x="625" y="170" text-anchor="middle" fill="#b23a32">counted again ✗</text></g>
+    </svg>
+    <figcaption><b>Fig 4.</b> The double-count — B1 and B2 reach PP twice</figcaption>
+  </figure>
+
+  <h3>Why This is Architecturally Difficult</h3>
+  <p>The problem is that the same entity (B1) must <strong>behave differently depending on the consolidation context</strong>:</p>
+  <ul>
+    <li><strong>In A1's group:</strong> B1 consolidates fully — line-by-line</li>
+    <li><strong>In PP's group:</strong> B1 must NOT consolidate again — it already arrived via A1</li>
+  </ul>
+  <div class="callout warn"><p><b>The architectural constraint.</b> A standard hierarchy cannot express this. If B1 is a child of both A1 and PP, it rolls up in both. The hierarchy needs a mechanism to give the same entity independent behaviour in different ownership paths.</p></div>
+</section>
+
+<!-- 6 -->
+<section id="s6">
+  <div class="sec-head"><span class="sec-num">06</span><h2 class="sec-title">The Path Encoding Solution</h2></div>
+  <div class="callout key"><p><b>The key insight.</b> Create a separate dimension element for each ownership <em>path</em>, not just for each entity.</p></div>
+  <p>Instead of a single element <code>B1</code>, the dimension contains:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Element</th><th>Meaning</th><th>Context</th></tr></thead>
+      <tbody>
+        <tr><td><code>B1</code></td><td>B1 as a base entity</td><td>Data storage — the actual trial balance</td></tr>
+        <tr><td><code>A1_B1</code></td><td>B1 as owned by A1</td><td>A1's group consolidation</td></tr>
+        <tr><td><code>PP_A1_B1</code></td><td>B1 as seen by PP via A1</td><td>PP's group — <strong>reversed / grouped to prevent double-count</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Each element is a unique node in the dimension. Each carries independent consolidation behaviour. The same underlying entity data feeds all of them, but the <strong>treatment</strong> at each level is independently controlled.</p>
+
+  <h3>The Naming Convention</h3>
+  <p>Element names encode the full ownership path using fixed-width <strong>2-character entity codes</strong> separated by underscores. String length encodes depth — deterministically, with no ambiguity.</p>
+
+  <!-- SIGNATURE DIAGRAM -->
+  <div class="signature">
+    <p class="sig-label">Path encoding · string length = depth</p>
+    <svg viewBox="0 0 660 250" role="img" aria-label="The element name PP_A1_B1_C1 broken down by character position: position 1 is PP, position 4 is A1, position 7 is B1, position 10 is C1.">
+      <!-- the string -->
+      <g font-family="'IBM Plex Mono',monospace" font-size="34" font-weight="600">
+        <text x="40" y="60" fill="#7fb3e0">P</text><text x="62" y="60" fill="#7fb3e0">P</text>
+        <text x="84" y="60" fill="#5a6b7a">_</text>
+        <text x="106" y="60" fill="#7fd0a0">A</text><text x="128" y="60" fill="#7fd0a0">1</text>
+        <text x="150" y="60" fill="#5a6b7a">_</text>
+        <text x="172" y="60" fill="#e3b766">B</text><text x="194" y="60" fill="#e3b766">1</text>
+        <text x="216" y="60" fill="#5a6b7a">_</text>
+        <text x="238" y="60" fill="#e89b94">C</text><text x="260" y="60" fill="#e89b94">1</text>
+      </g>
+      <!-- position ticks -->
+      <g font-family="'IBM Plex Mono',monospace" font-size="12" fill="#8aa0b4">
+        <line x1="51" y1="72" x2="51" y2="96" stroke="#7fb3e0" stroke-width="1.4"/>
+        <text x="51" y="112" text-anchor="middle">pos 1</text>
+        <line x1="117" y1="72" x2="117" y2="96" stroke="#7fd0a0" stroke-width="1.4"/>
+        <text x="117" y="112" text-anchor="middle">pos 4</text>
+        <line x1="183" y1="72" x2="183" y2="96" stroke="#e3b766" stroke-width="1.4"/>
+        <text x="183" y="112" text-anchor="middle">pos 7</text>
+        <line x1="249" y1="72" x2="249" y2="96" stroke="#e89b94" stroke-width="1.4"/>
+        <text x="249" y="112" text-anchor="middle">pos 10</text>
+      </g>
+      <!-- mapping -->
+      <g font-family="'IBM Plex Mono',monospace" font-size="13.5">
+        <text x="40" y="148" fill="#7fb3e0">PP</text><text x="78" y="148" fill="#aebccb">→ root holding company</text>
+        <text x="40" y="170" fill="#7fd0a0">A1</text><text x="78" y="170" fill="#aebccb">→ A1's direct parent is PP</text>
+        <text x="40" y="192" fill="#e3b766">B1</text><text x="78" y="192" fill="#aebccb">→ B1's direct parent is A1</text>
+        <text x="40" y="214" fill="#e89b94">C1</text><text x="78" y="214" fill="#aebccb">→ C1's direct parent is B1 (leaf)</text>
+      </g>
+      <!-- length to depth -->
+      <g font-family="'IBM Plex Mono',monospace" font-size="12.5" fill="#8aa0b4">
+        <rect x="430" y="128" width="200" height="98" rx="8" fill="#141c25" stroke="#2b3a4a"/>
+        <text x="448" y="150" fill="#c4d0db">len 2&nbsp;&nbsp;→ depth 0 (root)</text>
+        <text x="448" y="170" fill="#c4d0db">len 5&nbsp;&nbsp;→ depth 1</text>
+        <text x="448" y="190" fill="#c4d0db">len 8&nbsp;&nbsp;→ depth 2</text>
+        <text x="448" y="210" fill="#c4d0db">len 11 → depth 3</text>
+      </g>
+    </svg>
+  </div>
+
+  <pre class="ascii"><span class="k">PP</span>              2 chars    top-level holding company
+<span class="k">PP</span>_<span class="g">A1</span>           5 chars    PP owns A1
+<span class="k">PP</span>_<span class="g">A1</span>_<span class="a">B1</span>        8 chars    PP → A1 → B1
+<span class="k">PP</span>_<span class="g">A1</span>_<span class="a">B1</span>_<span class="r">C1</span>    11 chars   PP → A1 → B1 → C1</pre>
+
+  <p>Each additional level adds exactly 3 characters (<code>_XX</code>). The 2-character codes are <strong>keys, not descriptors</strong>. Human-readable names sit as aliases or attributes on the element — separate from the structural key. This is the same pattern used in any well-designed relational schema: surrogate key + descriptive attribute.</p>
+
+  <h3>Extracting Relationships from the Name</h3>
+  <p>Any 2-character pair at a known string position represents a direct parent-child relationship:</p>
+  <pre class="ascii">PP_A1_B1_C1
+│  │  │  └── Position 10: <span class="r">C1</span>  (leaf entity)
+│  │  └───── Position  7: <span class="a">B1</span>  (C1's direct parent)
+│  └──────── Position  4: <span class="g">A1</span>  (B1's direct parent)
+└─────────── Position  1: <span class="k">PP</span>  (A1's direct parent)</pre>
+  <p>For any element, <code>SUBST(name, position, 2)</code> extracts the entity code at that level. <strong>No external lookup is required — the element name is the data structure.</strong> This is the mechanism that makes the entire system work without loops, without recursion, and without graph traversal at query time.</p>
+</section>
+
+<!-- 7 -->
+<section id="s7">
+  <div class="sec-head"><span class="sec-num">07</span><h2 class="sec-title">Calculating Indirect Ownership from the Name</h2></div>
+  <p>Because the element name encodes the full ownership chain, indirect ownership is calculated by extracting each adjacent pair and looking up the direct ownership % for that pair from a time-aware cube:</p>
+  <pre class="ascii">PP_A1_B1
+  <span class="k">PP→A1 %</span>  ×  <span class="g">A1→B1 %</span>  =  PP indirect % in B1
+  SUBST(1,2)   SUBST(4,2)
+  SUBST(4,2)   SUBST(7,2)</pre>
+  <p>Three levels:</p>
+  <pre class="ascii">PP_A1_B1_C1
+  <span class="k">PP→A1 %</span>  ×  <span class="g">A1→B1 %</span>  ×  <span class="a">B1→C1 %</span>  =  PP indirect % in C1</pre>
+  <p>The pattern is consistent: each adjacent pair <code>(SUBST(pos, 2), SUBST(pos+3, 2))</code> is one ownership step. The number of multiplications equals the depth, derived from string length.</p>
+  <p>Direct pairwise ownership percentages are stored in a <strong>separate time-aware cube</strong> keyed on parent code and child code. This means ownership can change month by month without touching the dimension structure — the dimension holds the relationships, the cube holds the weights.</p>
+</section>
+
+<!-- 8 -->
+<section id="s8">
+  <div class="sec-head"><span class="sec-num">08</span><h2 class="sec-title">Rules vs TI: Why Live Calculation Wins</h2></div>
+  <p>Two approaches exist for calculating indirect ownership in a planning engine.</p>
+
+  <h3>Option 1 — TI Process (on-demand)</h3>
+  <p>A TI process loops through elements, traverses the chain, multiplies percentages, and writes results to a cube. Straightforward to write. Handles any depth with a loop.</p>
+  <div class="callout warn"><p><b>The problem.</b> Results are only correct at the moment the TI last ran. If ownership crosses 50% — an Associate becoming a Subsidiary — the model applies the wrong consolidation treatment until someone runs the TI. In a live consolidation, that is an unacceptable risk.</p></div>
+
+  <h3>Option 2 — Rules (always live)</h3>
+  <p>Rules fire automatically on any input change. The moment a direct ownership % is updated, every indirect %, classification, and consolidation treatment recalculates across the entire model instantly.</p>
+  <p><strong>The constraint:</strong> rules are declarative, not procedural — they cannot loop. Each depth level requires its own rule block:</p>
+  <pre><span class="c"># Depth 1 — PP_A1 (length 5)</span>
+Ownership = <span class="k">PP→A1 %</span>
+
+<span class="c"># Depth 2 — PP_A1_B1 (length 8)</span>
+Ownership = <span class="k">PP→A1 %</span>  ×  <span class="g">A1→B1 %</span>
+
+<span class="c"># Depth 3 — PP_A1_B1_C1 (length 11)</span>
+Ownership = <span class="k">PP→A1 %</span>  ×  <span class="g">A1→B1 %</span>  ×  <span class="a">B1→C1 %</span></pre>
+  <p>Each block is mechanically identical — one more multiplication. String length routes each element to the correct block.</p>
+  <div class="callout note"><p><b>Why rules win here.</b> The cost of N fixed blocks is trivial. Real-world group structures rarely exceed 4 levels deep. The consolidation dimension is small — hundreds of entities, not millions. Performance is never a concern. What matters is correctness at all times, without relying on a process being run.</p></div>
+  <p>The path encoding turns a graph traversal problem — which requires procedural logic — into a string arithmetic problem, which a declarative rules engine can evaluate natively.</p>
+</section>
+
+<!-- 9 -->
+<section id="s9">
+  <div class="sec-head"><span class="sec-num">09</span><h2 class="sec-title">The Dimension Structure</h2></div>
+  <p>A single dimension holds four distinct hierarchy types simultaneously. Each serves a different purpose in the consolidation workflow.</p>
+
+  <figure class="fig">
+    <svg viewBox="0 0 720 320" role="img" aria-label="Four hierarchy types within one dimension: Base, IC_CG indirect rollup, CC_PP output hierarchy, and CG_A1 sub-group.">
+      <defs>
+        <marker id="a5" markerWidth="8" markerHeight="8" refX="6.5" refY="3.5" orient="auto">
+          <path d="M0,0 L7,3.5 L0,7 Z" fill="#7a868f"/>
+        </marker>
+      </defs>
+      <!-- Base -->
+      <g>
+        <rect class="node-steel" x="20" y="30" width="140" height="48" rx="7"/>
+        <text class="svg-label" x="90" y="50" text-anchor="middle" font-weight="600">Base (C)</text>
+        <text class="svg-sub" x="90" y="66" text-anchor="middle">all leaf entities — flat</text>
+        <path class="edge" marker-end="url(#a5)" d="M55,80 L40,120"/>
+        <path class="edge" marker-end="url(#a5)" d="M90,80 L90,120"/>
+        <path class="edge" marker-end="url(#a5)" d="M125,80 L140,120"/>
+        <rect class="node-plain" x="14" y="124" width="46" height="30" rx="5"/><text class="svg-sub" x="37" y="143" text-anchor="middle">A1</text>
+        <rect class="node-plain" x="67" y="124" width="46" height="30" rx="5"/><text class="svg-sub" x="90" y="143" text-anchor="middle">B1</text>
+        <rect class="node-plain" x="120" y="124" width="46" height="30" rx="5"/><text class="svg-sub" x="143" y="143" text-anchor="middle">B2</text>
+      </g>
+      <!-- IC_CG -->
+      <g>
+        <rect class="node-indigo" x="190" y="30" width="150" height="48" rx="7"/>
+        <text class="svg-label" x="265" y="50" text-anchor="middle" font-weight="600">IC_CG (C)</text>
+        <text class="svg-sub" x="265" y="66" text-anchor="middle">indirect ownership rollup</text>
+        <path class="edge" marker-end="url(#a5)" d="M265,80 L265,116"/>
+        <rect class="node-plain" x="200" y="120" width="130" height="30" rx="5"/><text class="svg-sub" x="265" y="139" text-anchor="middle">B1_Group % (C)</text>
+        <path class="edge" marker-end="url(#a5)" d="M265,152 L265,184"/>
+        <rect class="node-plain" x="200" y="188" width="130" height="30" rx="5"/><text class="svg-sub" x="265" y="207" text-anchor="middle">PP_A1_B1 (N)</text>
+      </g>
+      <!-- CC_PP -->
+      <g>
+        <rect class="node-green" x="370" y="30" width="160" height="48" rx="7"/>
+        <text class="svg-label" x="450" y="50" text-anchor="middle" font-weight="600">CC_PP (C)</text>
+        <text class="svg-sub" x="450" y="66" text-anchor="middle">PP full group — output</text>
+        <path class="edge" marker-end="url(#a5)" d="M395,80 L385,116"/>
+        <path class="edge" marker-end="url(#a5)" d="M440,80 L440,116"/>
+        <path class="edge" marker-end="url(#a5)" d="M490,80 L500,116"/>
+        <rect class="node-plain" x="372" y="120" width="60" height="28" rx="5"/><text class="svg-sub" x="402" y="138" text-anchor="middle">PP</text>
+        <rect class="node-plain" x="372" y="156" width="156" height="28" rx="5"/><text class="svg-sub" x="450" y="174" text-anchor="middle">PP_A1</text>
+        <rect class="node-plain" x="372" y="192" width="156" height="28" rx="5"/><text class="svg-sub" x="450" y="210" text-anchor="middle">PP_A1_B1</text>
+        <rect class="node-plain" x="372" y="228" width="156" height="28" rx="5"/><text class="svg-sub" x="450" y="246" text-anchor="middle">PP_A1_B2</text>
+      </g>
+      <!-- CG_A1 -->
+      <g>
+        <rect class="node-amber" x="560" y="30" width="140" height="48" rx="7"/>
+        <text class="svg-label" x="630" y="50" text-anchor="middle" font-weight="600">CG_A1 (C)</text>
+        <text class="svg-sub" x="630" y="66" text-anchor="middle">A1 sub-group consol</text>
+        <path class="edge" marker-end="url(#a5)" d="M610,80 L600,116"/>
+        <path class="edge" marker-end="url(#a5)" d="M650,80 L660,116"/>
+        <rect class="node-plain" x="562" y="120" width="136" height="28" rx="5"/><text class="svg-sub" x="630" y="138" text-anchor="middle">A1_B1</text>
+        <rect class="node-plain" x="562" y="156" width="136" height="28" rx="5"/><text class="svg-sub" x="630" y="174" text-anchor="middle">A1_B2</text>
+      </g>
+    </svg>
+    <figcaption><b>Fig 5.</b> Four hierarchy types, one dimension</figcaption>
+  </figure>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Prefix</th><th>Hierarchy Type</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><em>(none)</em></td><td><strong>Base</strong></td><td>Flat list of all entities. Every entity appears exactly once. This is where data is loaded</td></tr>
+        <tr><td><code>IC_CG</code></td><td><strong>Indirect</strong></td><td>Ownership path rollup per entity. Used for ownership reporting and validation</td></tr>
+        <tr><td><code>CC_XX</code></td><td><strong>COC Root</strong></td><td>Full consolidated group for holding company XX. Contains all path elements. This is the output</td></tr>
+        <tr><td><code>CG_XX</code></td><td><strong>Sub-Group</strong></td><td>Consolidation group for intermediate entity XX. Contains entities owned directly by XX</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The same entity (e.g. B1) appears multiple times — once in Base as a data node, once in IC_CG for ownership reporting, and once per consolidation path in the CC_ and CG_ hierarchies. Each appearance is a distinct dimension element with independent behaviour.</p>
+
+  <h3>Preventing the Double-Count</h3>
+  <p>Path elements in the parent group that are already captured in a sub-group consolidation are flagged as <strong>Grouped</strong>. A rule fires a reversal equal to their base data — net contribution becomes zero. Those entities reach the parent group only via the sub-group's consolidated result.</p>
+
+  <figure class="fig">
+    <svg viewBox="0 0 720 230" role="img" aria-label="PP_A1_B1 contributes base data plus a grouped reversal that nets to zero; B1 reaches PP only through A1 Consolidated.">
+      <defs>
+        <marker id="a6g" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#2c7a52"/></marker>
+        <marker id="a6r" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#b23a32"/></marker>
+        <marker id="a6s" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#2f5d8a"/></marker>
+      </defs>
+      <!-- A1 consolidated -->
+      <g><rect class="node-green" x="40" y="40" width="200" height="56" rx="7"/>
+        <text class="svg-label" x="140" y="63" text-anchor="middle" font-weight="600">A1 Consolidated</text>
+        <text class="svg-sub" x="140" y="80" text-anchor="middle">B1 + B2 already inside</text></g>
+      <path class="edge" marker-end="url(#a6s)" style="stroke:var(--steel)" d="M242,68 L470,68"/>
+      <text class="svg-sub" x="356" y="58" text-anchor="middle" fill="#2f5d8a">rolls into</text>
+      <!-- PP consolidated -->
+      <g><rect class="node-steel" x="472" y="40" width="200" height="56" rx="7"/>
+        <text class="svg-label" x="572" y="72" text-anchor="middle" font-weight="600">PP Consolidated</text></g>
+      <!-- PP_A1_B1 element -->
+      <g><rect class="node-amber" x="40" y="150" width="200" height="56" rx="7"/>
+        <text class="svg-label" x="140" y="173" text-anchor="middle" font-weight="600">PP_A1_B1</text>
+        <text class="svg-sub" x="140" y="190" text-anchor="middle">B1 path element at PP level</text></g>
+      <path marker-end="url(#a6g)" style="stroke:var(--green);stroke-width:1.8;fill:none" d="M242,168 Q400,150 470,96"/>
+      <path marker-end="url(#a6r)" style="stroke:var(--red);stroke-width:1.8;fill:none;stroke-dasharray:5 4" d="M242,188 Q420,180 470,100"/>
+      <text class="svg-edge" x="330" y="150" fill="#2c7a52">+ Base Data</text>
+      <text class="svg-edge" x="330" y="200" fill="#b23a32">− Grouped Reversal</text>
+    </svg>
+    <figcaption><b>Fig 6.</b> Net effect: +Base Data − Grouped Reversal = 0 → B1 counted once</figcaption>
+  </figure>
+
+  <p>Net effect: <code>+Base Data − Grouped Reversal = 0</code>. B1 is counted exactly once.</p>
+</section>
+
+<!-- 10 -->
+<section id="s10">
+  <div class="sec-head"><span class="sec-num">10</span><h2 class="sec-title">The Grouped Override</h2></div>
+  <p>Not all COC situations fall neatly from ownership percentage. Group structure decisions — regulatory requirements, legal constraints, presentational choices — sometimes require a specific treatment regardless of the calculated ownership.</p>
+  <p>Four overrides are supported, each taking precedence over the calculated classification:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Override</th><th>Treatment Applied</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill grp">Y — Grouped</span></td><td>Base data reversed. Entity excluded from direct consolidation — arrives only via sub-group</td></tr>
+        <tr><td><span class="pill sub">S — Subsidiary</span></td><td>Force full consolidation regardless of calculated %</td></tr>
+        <tr><td><span class="pill assoc">A — Associate</span></td><td>Force equity method regardless of calculated %</td></tr>
+        <tr><td><span class="pill inv">I — Investment</span></td><td>Force investment treatment regardless of calculated %</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Overrides are stored in a <strong>time-aware cube</strong> — they can be applied for a specific period and version without changing any other period. This is important for restating comparative periods when group structure decisions change retrospectively.</p>
+</section>
+
+<!-- 11 -->
+<section id="s11">
+  <div class="sec-head"><span class="sec-num">11</span><h2 class="sec-title">One Model, All Cases</h2></div>
+  <div class="callout key"><p><b>A critical point that is easy to miss.</b> This is not multiple models or multiple processes for different entity types. It is one dimension, one set of rules, one consolidation run — handling all cases simultaneously.</p></div>
+  <p>In a single consolidation, the model may contain:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Entity</th><th>Ownership</th><th>Classification</th><th>Treatment</th></tr></thead>
+      <tbody>
+        <tr><td>A1</td><td>100% direct</td><td><span class="pill sub">Subsidiary</span></td><td>Full consolidation</td></tr>
+        <tr><td>B1</td><td>56% indirect via A1</td><td><span class="pill sub">Subsidiary</span></td><td>Full consolidation, minority interest</td></tr>
+        <tr><td>B2</td><td>35% indirect</td><td><span class="pill assoc">Associate</span></td><td>Equity method</td></tr>
+        <tr><td>B3</td><td>15% direct</td><td><span class="pill inv">Investment</span></td><td>Fair value / cost</td></tr>
+        <tr><td>A1 (at PP level)</td><td>Sub-group</td><td><span class="pill grp">Grouped</span></td><td>Base data reversed — arrives via A1 consolidated</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>All five treatments coexist in the same model. The classification rules fire for every entity on every calculation. The correct treatment is applied automatically based on the calculated ownership percentage and any override in place.</p>
+  <p>Adding a new entity does not require a new process, a new cube, or a new rule set. Add the element, wire the ownership, and the model absorbs it.</p>
+  <p>This is the practical payoff of the design. A consolidation team managing a group that changes over time — acquisitions, disposals, threshold crossings — does not need to reconfigure the model. They update ownership data. Everything else follows.</p>
+</section>
+
+<!-- 12 -->
+<section id="s12">
+  <div class="sec-head"><span class="sec-num">12</span><h2 class="sec-title">UI Considerations</h2></div>
+  <p>The dimension structure and naming convention are elegant from a design perspective. From a finance user's perspective, opening a model and seeing elements named <code>PP_A1_B1_C1</code> with no context is disorienting. A good UI hides the mechanism and exposes the workflow.</p>
+
+  <h3>What to Hide</h3>
+  <ul>
+    <li><strong>Path element names</strong> — <code>PP_A1_B1</code> means nothing to a finance user. Show entity descriptions (aliases) everywhere. The key is internal plumbing.</li>
+    <li><strong>The dimension structure</strong> — Base, IC_CG, CC_, CG_ prefixes are developer concepts. A finance user should never see them.</li>
+    <li><strong>The rules engine</strong> — classification, ownership chain traversal, and reversal logic should be invisible. The user sees the result, not the mechanism.</li>
+    <li><strong>Account codes</strong> — where possible, show account descriptions. Codes are for mapping, not for human navigation.</li>
+  </ul>
+
+  <h3>What to Expose</h3>
+  <p><strong>A visual ownership tree</strong> — the single most important UI element. Show the group structure as a tree with ownership % on each edge and classification badges on each node. A finance user should be able to see their entire group structure at a glance and spot errors immediately.</p>
+  <pre class="ascii">PP (Group)
+├── <span class="g">A1</span> — 80% <span class="k">[Subsidiary]</span>
+│   ├── <span class="g">B1</span> — 75% <span class="k">[Subsidiary, MI: 5%]</span>
+│   └── <span class="g">B2</span> — 70% <span class="k">[Subsidiary, MI: 16%]</span>
+└── <span class="a">A2</span> — 35% <span class="a">[Associate]</span></pre>
+  <ul>
+    <li><strong>Calculated indirect % alongside entered direct %</strong> — make it clear what the model is computing. If a user enters 80% for PP→A1 and 75% for A1→B1, show them that PP's effective ownership of B1 is 60%.</li>
+    <li><strong>Classification status clearly labelled</strong> — Subsidiary / Associate / Investment / Grouped as a visible badge on each entity, with an indicator if it is overridden.</li>
+    <li><strong>Threshold proximity warning</strong> — if ownership is approaching 50% or 20%, flag it. A stake at 48% is one transaction away from reclassification.</li>
+    <li><strong>Consolidation step sequence</strong> — show the consolidation process as an ordered workflow. Data load → Adjustments → Intragroup → Investment elimination → Translation → Minority interest. Each step has a status.</li>
+    <li><strong>Approval status per entity</strong> — which entities have approved data, which are pending. Visible at the group level, drillable to entity level.</li>
+  </ul>
+
+  <h3>The Guiding Principle</h3>
+  <p>The UI should present the <strong>accounting workflow</strong>, not the technical model. A finance user thinks:</p>
+  <blockquote>"I own 75% of B1 via A1. B1 has intercompany sales to B2 that need eliminating. B1 reports in USD, I consolidate in GBP."</blockquote>
+  <p>They should never need to think:</p>
+  <blockquote>"I need to add element PP_A1_B1, wire it into CG_A1, set the ownership % in the pairwise cube, and check the length-8 rule block fires correctly."</blockquote>
+  <p>That translation — from accounting intent to model mechanics — is the UI's job entirely.</p>
+
+  <h3>TM1-Specific Reality</h3>
+  <p>PAW websheets are table-based. They are effective for data entry but limited for visual hierarchy representation. A tree diagram of the group structure requires either a custom HTML/JavaScript object within PAW, or a separate lightweight web application sitting alongside TM1 that reads the ownership data and renders it visually.</p>
+  <p>The data is all there — ownership %, classifications, entity names are all in the model. The UI layer is a presentation problem, not a data problem.</p>
+</section>
+
+<!-- 13 -->
+<section id="s13">
+  <div class="sec-head"><span class="sec-num">13</span><h2 class="sec-title">Summary: Why This Design Works</h2></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Problem</th><th>Solution</th></tr></thead>
+      <tbody>
+        <tr><td>Same entity in multiple groups</td><td>Separate path element per ownership path</td></tr>
+        <tr><td>Double-count in COC</td><td>Grouped flag + automatic reversal rule</td></tr>
+        <tr><td>Indirect ownership calculation</td><td>String position arithmetic on element name — no external lookup, no recursion</td></tr>
+        <tr><td>Live recalculation on ownership change</td><td>Rules, not TI — one deterministic block per depth level</td></tr>
+        <tr><td>Time-varying ownership %</td><td>Stored in a period-aware cube, not in the dimension</td></tr>
+        <tr><td>Entity history preserved on disposal</td><td>Elements never deleted — removed from active consolidation group only</td></tr>
+        <tr><td>Ownership crossing a threshold</td><td>Classification recalculates automatically — no manual intervention</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The design separates three concerns that are often conflated:</p>
+  <ol>
+    <li><strong>Identity</strong> — what the entity is (<code>B1</code> as a base element, with name and currency as attributes)</li>
+    <li><strong>Relationship</strong> — how entities connect (<code>PP_A1_B1</code> encodes the full ownership path)</li>
+    <li><strong>Ownership %</strong> — how much is owned (stored in a time-aware cube, keyed on 2-char codes)</li>
+  </ol>
+  <p>Each concern changes at a different frequency and for different reasons. Keeping them separate makes the model maintainable, auditable, and correct across time.</p>
+  <div class="callout key"><p><b>The deeper insight.</b> The naming convention converts a <em>graph traversal problem</em> — which requires procedural logic and is hard to express in a declarative rules engine — into a <em>string arithmetic problem</em>, which any rules engine can evaluate natively and instantly. That is the invention at the heart of this design.</p></div>
+</section>
+
+<!-- 14 -->
+<section id="s14">
+  <div class="sec-head"><span class="sec-num">14</span><h2 class="sec-title">Prototype Validation</h2></div>
+  <p>The design has been implemented and tested as an advanced prototype in IBM Planning Analytics (TM1). Scenarios validated include:</p>
+  <ul>
+    <li><strong>Direct consolidation</strong> — single-level hierarchy, full and partial ownership</li>
+    <li><strong>Multi-level indirect consolidation</strong> — chain traversal and indirect % calculation across levels</li>
+    <li><strong>Consolidation of Consolidation</strong> — sub-group entities correctly excluded from parent double-count via Grouped reversal</li>
+    <li><strong>Ownership threshold crossing</strong> — automatic reclassification between Subsidiary / Associate / Investment on ownership change</li>
+    <li><strong>Override classification</strong> — manual Grouped, Investment, Associate, Subsidiary overrides applied per period</li>
+    <li><strong>Multi-currency</strong> — local currency entity data translated to group currency with account-level rate type mapping</li>
+  </ul>
+</section>
+
+<!-- 15 -->
+<section id="s15">
+  <div class="sec-head"><span class="sec-num">15</span><h2 class="sec-title">References &amp; Reference Material</h2></div>
+  <p>The consolidation accounting underlying this design — indirect ownership, complex group structures with sub-subsidiaries, minority interest, the classification thresholds, and consolidation theory — draws on:</p>
+  <div class="callout note">
+    <p>Ng, Eng Juan. <em>Consolidated Financial Statements (Singapore)</em>. McGraw-Hill Education (Asia), 2nd ed., 2010.</p>
+  </div>
+  <p style="color:var(--ink-faint);font-size:15px">Worked journal examples used in prototype testing to be added here.</p>
+</section>
+
+</div>
+</main>
+
+<!-- ============ FOOTER ============ -->
+<footer>
+  <div class="wrap">
+    <h2>Open methodology</h2>
+    <p>This design is published openly as intellectual property. The conceptual approach — the ownership graph, path encoding, and dimension architecture — is shared freely. Detailed platform-specific build work, rule code, and implementation are available as a paid consulting engagement.</p>
+    <div class="lic">
+      <span>© 2026 falconbi</span>
+      <span>Licence: CC BY 4.0 — attribution required, commercial use permitted</span>
+      <span>IBM Planning Analytics / TM1</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
