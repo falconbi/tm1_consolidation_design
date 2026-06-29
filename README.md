@@ -2,6 +2,8 @@
 
 A conceptual design reference for building a multi-entity, multi-currency financial consolidation hierarchy in IBM Planning Analytics (TM1). This document covers the core design decisions — the ownership graph model, the path encoding mechanism, and the dimension architecture that makes Consolidation of Consolidation (COC) tractable inside a rules-based engine.
 
+📄 **[Read the full rendered document →](https://falconbi.github.io/tm1_consolidation_design/)**
+
 > **Prototype status:** An advanced prototype has been built and tested against this design, validating the hierarchy mechanism, COC classification, indirect ownership calculation, and consolidation sequencing across multiple real-world scenarios.
 
 ---
