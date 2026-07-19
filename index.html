@@ -5,29 +5,32 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Financial Consolidation Hierarchy Design in TM1</title>
 <meta name="description" content="A conceptual design reference for building a multi-entity, multi-currency financial consolidation hierarchy in IBM Planning Analytics (TM1) — ownership graph model, path encoding, and the dimension architecture that makes Consolidation of Consolidation tractable in a rules engine.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="falconbi.css">
 <style>
   :root{
-    --ink:#1b2126;
-    --ink-soft:#4c5862;
-    --ink-faint:#7a868f;
-    --paper:#fbfaf7;
+    --ink:#1c1917;
+    --ink-soft:#57534e;
+    --ink-faint:#a8a29e;
+    --paper:#fafaf9;
     --panel:#ffffff;
-    --rule:#e4e7ea;
-    --rule-soft:#eef0f2;
+    --rule:#e7e5e4;
+    --rule-soft:#f5f5f4;
 
-    --steel:#2f5d8a;        /* structure, hierarchy, base */
-    --steel-light:#e9f1f8;
-    --green:#2c7a52;        /* valid flow, base data, counted-once */
-    --green-light:#e7f4ec;
-    --amber:#b0750f;        /* contra, grouped, reversal */
-    --amber-light:#fbf2dd;
-    --red:#b23a32;          /* double-count, warnings */
-    --red-light:#fbe9e6;
-    --indigo:#4a3f9c;       /* implementation, UI */
-    --indigo-light:#ecebf8;
+    --steel:#0f766e;        /* structure, hierarchy, base */
+    --steel-light:#f0fdfa;
+    --green:#166534;        /* valid flow, base data, counted-once */
+    --green-light:#f0fdf4;
+    --amber:#92400e;        /* contra, grouped, reversal */
+    --amber-light:#fef3c7;
+    --red:#991b1b;          /* double-count, warnings */
+    --red-light:#fee2e2;
+    --indigo:#4c1d95;       /* implementation, UI */
+    --indigo-light:#ede9fe;
 
     --maxw:860px;
   }
@@ -40,7 +43,7 @@
     margin:0;
     background:var(--paper);
     color:var(--ink);
-    font-family:'IBM Plex Sans',system-ui,sans-serif;
+    font-family:'DM Sans',system-ui,sans-serif;
     font-size:17px;
     line-height:1.62;
     -webkit-font-smoothing:antialiased;
@@ -68,7 +71,7 @@
   }
   .eyebrow::after{content:"";flex:1;height:1px;background:var(--rule)}
   h1.title{
-    font-family:'IBM Plex Serif',Georgia,serif;
+    font-family:'DM Sans',system-ui,sans-serif;
     font-weight:600;
     font-size:clamp(2.1rem,5.4vw,3.3rem);
     line-height:1.08;
@@ -145,12 +148,12 @@
     flex:none;padding-top:5px;
   }
   h2.sec-title{
-    font-family:'IBM Plex Serif',Georgia,serif;
+    font-family:'DM Sans',system-ui,sans-serif;
     font-weight:600;font-size:clamp(1.5rem,3.4vw,2rem);
     line-height:1.15;letter-spacing:-.01em;margin:0;color:var(--ink);
   }
   h3{
-    font-family:'IBM Plex Sans',sans-serif;
+    font-family:'DM Sans',sans-serif;
     font-weight:600;font-size:1.16rem;
     margin:34px 0 12px;color:var(--ink);
     letter-spacing:-.005em;
@@ -176,7 +179,7 @@
     margin:18px 0;padding:4px 0 4px 22px;
     border-left:3px solid var(--rule);
     color:var(--ink-soft);font-style:italic;
-    font-family:'IBM Plex Serif',serif;font-size:1.08rem;
+    font-family:'DM Sans',system-ui,sans-serif;font-size:1.08rem;
   }
 
   /* ---------- Tables ---------- */
@@ -226,7 +229,7 @@
   figcaption b{color:var(--ink-soft);font-weight:600}
 
   /* SVG element styling */
-  .svg-label{font-family:'IBM Plex Sans',sans-serif;font-size:14px;fill:var(--ink)}
+  .svg-label{font-family:'DM Sans',sans-serif;font-size:14px;fill:var(--ink)}
   .svg-sub{font-family:'IBM Plex Mono',monospace;font-size:11px;fill:var(--ink-faint)}
   .svg-edge{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600}
   .node-steel{fill:var(--steel-light);stroke:var(--steel);stroke-width:1.5}
@@ -271,7 +274,7 @@
   footer{background:#1c2530;color:#aebccb;border-top:3px solid var(--steel)}
   footer .wrap{padding-top:48px;padding-bottom:54px}
   footer h2{
-    font-family:'IBM Plex Serif',serif;color:#f0f4f8;font-weight:600;
+    font-family:'DM Sans',system-ui,sans-serif;color:#f0f4f8;font-weight:600;
     font-size:1.3rem;margin:0 0 14px;
   }
   footer p{color:#aebccb;font-size:15px;max-width:62ch}
@@ -293,6 +296,14 @@
 </style>
 </head>
 <body>
+
+<header class="topbar">
+  <a href="index.html" class="brand">
+    <img src="favicon.png" class="brand-eagle" alt="FalconBI">
+    <span class="brand-word">falcon<b>bi</b></span>
+  </a>
+  <div class="topbar-right"><span class="kicker">Design Reference &nbsp;·&nbsp; IBM Planning Analytics</span></div>
+</header>
 
 <!-- ============ MASTHEAD ============ -->
 <header class="masthead">
@@ -942,13 +953,16 @@ Ownership = <span class="k">PP→A1 %</span>  ×  <span class="g">A1→B1 %</spa
 
 <!-- ============ FOOTER ============ -->
 <footer>
-  <div class="wrap">
-    <h2>Open methodology</h2>
-    <p>This design is published openly as intellectual property. The conceptual approach — the ownership graph, path encoding, and dimension architecture — is shared freely. Detailed platform-specific build work, rule code, and implementation are available as a paid consulting engagement.</p>
-    <div class="lic">
-      <span>© 2026 falconbi</span>
-      <span>Licence: CC BY 4.0 — attribution required, commercial use permitted</span>
-      <span>IBM Planning Analytics / TM1</span>
+  <div class="foot-inner">
+    <div>
+      <div class="foot-mark">falcon<b>bi</b></div>
+      <p>Financial Consolidation Hierarchy Design — TM1 multi-entity ownership graph model.</p>
+      <span class="license">CC BY 4.0 — attribution required</span>
+    </div>
+    <div class="foot-meta">
+      Design reference · IBM Planning Analytics<br>
+      Open methodology — implementation available<br>
+      © 2026 falconbi
     </div>
   </div>
 </footer>
